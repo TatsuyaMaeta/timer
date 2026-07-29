@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイマー管理者画面</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #f0f0f0;
+    --muted: #888;
+    --accent: #e8ff47;
+    --accent-dim: rgba(232,255,71,0.12);
+    --danger: #ff5c5c;
+    --warning: #ff9a3c;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem 3rem; }
+  .header { width: 100%; max-width: 560px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+  .header h1 { font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
+  .conn-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; transition: all 0.3s; }
+  .conn-dot.connected { background: #4ade80; box-shadow: 0 0 8px #4ade80; }
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: 16px; width: 100%; max-width: 560px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .section-label { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+
+  /* Setup */
+  .input-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+  .input-row label { font-size: 12px; color: var(--muted); }
+  .input-row input { background: var(--surface2); border: 0.5px solid var(--border2); border-radius: 8px; padding: 10px 12px; color: var(--text); font-family: var(--mono); font-size: 12px; outline: none; transition: border-color 0.2s; width: 100%; }
+  .input-row input:focus { border-color: var(--accent); }
+  .connect-btn { width: 100%; padding: 10px; background: var(--accent); color: #000; font-family: var(--sans); font-size: 14px; font-weight: 500; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.2s; }
+  .connect-btn:hover { opacity: 0.85; }
+  .connect-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Main UI */
+  .main-ui { display: none; width: 100%; max-width: 560px; flex-direction: column; }
+  .main-ui.visible { display: flex; }
+  .mode-row { display: flex; gap: 8px; }
+  .mode-btn { flex: 1; padding: 10px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 10px; color: var(--muted); font-family: var(--sans); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .mode-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+  .cd-settings { display: none; }
+  .cd-settings.visible { display: block; }
+  .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .preset-btn { padding: 6px 14px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 20px; color: var(--muted); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .preset-btn:hover { border-color: var(--border2); color: var(--text); }
+  .preset-btn.selected { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .custom-row { display: flex; align-items: center; gap: 8px; }
+  .custom-row input { width: 64px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none; }
+  .custom-row input:focus { border-color: var(--accent); }
+  .custom-row span { font-size: 13px; color: var(--muted); }
+  .custom-btn { padding: 8px 14px; background: var(--surface2); border: 0.5px solid var(--border2); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .display-card { text-align: center; padding: 2rem 1.5rem; }
+  .time-display { font-family: var(--mono); font-size: 72px; font-weight: 400; letter-spacing: 4px; color: var(--text); line-height: 1; transition: color 0.4s; }
+  .time-display.warning { color: var(--warning); }
+  .time-display.ended { color: var(--danger); }
+  .mode-label { font-size: 12px; color: var(--muted); margin-top: 8px; letter-spacing: 0.08em; }
+  .ctrl-row { display: flex; gap: 8px; }
+  .ctrl-btn { flex: 1; padding: 12px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--sans); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.15s; }
+  .ctrl-btn:hover { border-color: var(--border2); }
+  .ctrl-btn.start { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 500; }
+  .ctrl-btn.start:hover { opacity: 0.88; }
+
+  /* Bell settings */
+  .bell-timing-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .bell-timing-row { display: flex; align-items: center; gap: 10px; }
+  .bell-number { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-dim); border: 0.5px solid var(--accent); color: var(--accent); font-size: 11px; font-weight: 500; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .bell-label { font-size: 13px; color: var(--muted); width: 60px; flex-shrink: 0; }
+  .bell-timing-row input { width: 70px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text); font-family: var(--mono); font-size: 14px; text-align: center; outline: none; transition: border-color 0.2s; }
+  .bell-timing-row input:focus { border-color: var(--accent); }
+  .bell-timing-row .unit { font-size: 12px; color: var(--muted); }
+  .bell-timing-row .bell-desc { font-size: 12px; color: #555; margin-left: auto; }
+  .bell-divider { height: 0.5px; background: var(--border); margin: 12px 0; }
+  .manual-bell-row { display: flex; align-items: center; gap: 10px; }
+  .bell-btn { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .bell-btn:hover { border-color: var(--border2); }
+  .bell-log { font-size: 12px; color: var(--muted); }
+
+  .info-box { background: var(--surface2); border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 1rem; }
+  svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⏱ Timer Admin</h1>
+  <div class="conn-badge">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span id="conn-label">未接続</span>
+  </div>
+</div>
+
+<!-- Setup Card -->
+<div class="card" id="setup-card">
+  <div class="section-label" style="margin-bottom:12px">Supabase 接続設定</div>
+  <div class="input-row">
+    <label>Project URL</label>
+    <input type="text" id="sb-url" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off">
+  </div>
+  <div class="input-row">
+    <label>Anon Key</label>
+    <input type="text" id="sb-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." autocomplete="off">
+  </div>
+  <button class="connect-btn" id="connect-btn" onclick="connectSupabase()">接続する</button>
+</div>
+
+<!-- Main UI -->
+<div class="main-ui" id="main-ui">
+
+  <div class="card">
+    <div class="section-label">モード</div>
+    <div class="mode-row">
+      <button class="mode-btn active" id="mode-up" onclick="setMode('up')">▲ カウントアップ</button>
+      <button class="mode-btn" id="mode-down" onclick="setMode('down')">▼ カウントダウン</button>
+    </div>
+  </div>
+
+  <div class="card cd-settings" id="cd-settings">
+    <div class="section-label">開始時間</div>
+    <div class="preset-row">
+      <button class="preset-btn" onclick="applyPreset(60,this)">1分</button>
+      <button class="preset-btn" onclick="applyPreset(180,this)">3分</button>
+      <button class="preset-btn" onclick="applyPreset(300,this)">5分</button>
+      <button class="preset-btn" onclick="applyPreset(600,this)">10分</button>
+      <button class="preset-btn" onclick="applyPreset(1800,this)">30分</button>
+    </div>
+    <div class="custom-row">
+      <input type="number" id="custom-min" min="0" max="99" value="5">
+      <span>分</span>
+      <input type="number" id="custom-sec" min="0" max="59" value="0">
+      <span>秒</span>
+      <button class="custom-btn" onclick="applyCustom()">セット</button>
+    </div>
+  </div>
+
+  <div class="card display-card">
+    <div class="time-display" id="time-display">00:00</div>
+    <div class="mode-label" id="mode-label">カウントアップ</div>
+  </div>
+
+  <div class="card">
+    <div class="ctrl-row">
+      <button class="ctrl-btn start" id="btn-start" onclick="toggleStart()">
+        <svg class="icon" id="icon-start" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span id="label-start">スタート</span>
+      </button>
+      <button class="ctrl-btn" onclick="resetTimer()">
+        <svg class="icon" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.41"/></svg>
+        リセット
+      </button>
+    </div>
+  </div>
+
+  <!-- Bell settings card -->
+  <div class="card">
+    <div class="section-label">ベル設定・操作</div>
+
+    <div class="bell-timing-grid">
+      <div class="bell-timing-row">
+        <div class="bell-number">1</div>
+        <span class="bell-label">1回目</span>
+        <span style="font-size:12px;color:var(--muted)">残り</span>
+        <input type="number" id="bell1" min="0" max="9999" value="60">
+        <span class="unit">秒</span>
+        <span class="bell-desc" id="bell1-desc">残り1分</span>
+      </div>
+      <div class="bell-timing-row">
+        <div class="bell-number">2</div>
+        <span class="bell-label">2回目</span>
+        <span style="font-size:12px;color:var(--muted)">残り</span>
+        <input type="number" id="bell2" min="0" max="9999" value="30">
+        <span class="unit">秒</span>
+        <span class="bell-desc" id="bell2-desc">残り30秒</span>
+      </div>
+      <div class="bell-timing-row">
+        <div class="bell-number">3</div>
+        <span class="bell-label">3回目</span>
+        <span style="font-size:12px;color:var(--muted)">残り</span>
+        <input type="number" id="bell3" min="0" max="9999" value="0">
+        <span class="unit">秒</span>
+        <span class="bell-desc" id="bell3-desc">終了時</span>
+      </div>
+    </div>
+
+    <div class="bell-divider"></div>
+
+    <div class="manual-bell-row">
+      <button class="bell-btn" onclick="manualBell()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        今すぐベルを鳴らす
+      </button>
+      <span class="bell-log" id="bell-log"></span>
+    </div>
+  </div>
+
+  <div class="info-box">
+    🔔 上記で設定した残り秒数になると自動でベルが鳴ります（カウントダウン時のみ）
+  </div>
+
+</div>
+
+<script>
+let sbClient = null;
+let sbChannel = null;
+let intervalId = null;
+
+let state = {
+  mode: 'up',
+  running: false,
+  elapsed: 0,
+  startSec: 300,
+  bellFired: [false, false, false],
+};
+
+// ─── ベル設定を取得 ──────────────────────────────────────
+function getBellTimes() {
+  return [
+    parseInt(document.getElementById('bell1').value) || 0,
+    parseInt(document.getElementById('bell2').value) || 0,
+    parseInt(document.getElementById('bell3').value) || 0,
+  ];
+}
+
+// ベル説明テキスト更新
+function updateBellDesc() {
+  [1,2,3].forEach(i => {
+    const val = parseInt(document.getElementById('bell'+i).value) || 0;
+    const desc = document.getElementById('bell'+i+'-desc');
+    if (val === 0) desc.textContent = '終了時';
+    else if (val < 60) desc.textContent = '残り'+val+'秒';
+    else desc.textContent = '残り'+(val/60)+'分';
+  });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  ['bell1','bell2','bell3'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateBellDesc);
+  });
+  updateBellDesc();
+});
+
+// ─── Supabase接続 ────────────────────────────────────────
+function connectSupabase() {
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  if (!url || !key) { alert('URLとAnon Keyを入力してください'); return; }
+  const btn = document.getElementById('connect-btn');
+  btn.textContent = '接続中...'; btn.disabled = true;
+  try {
+    const { createClient } = window.supabase;
+    sbClient = createClient(url, key);
+    subscribeChannel();
+  } catch(e) {
+    alert('接続エラー: ' + e.message);
+    btn.textContent = '接続する'; btn.disabled = false;
+  }
+}
+
+function subscribeChannel() {
+  sbChannel = sbClient.channel('timer-room', {
+    config: { broadcast: { self: false } }
+  });
+  sbChannel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      document.getElementById('conn-dot').classList.add('connected');
+      document.getElementById('conn-label').textContent = '接続済み';
+      document.getElementById('setup-card').style.display = 'none';
+      document.getElementById('main-ui').classList.add('visible');
+    }
+  });
+}
+
+function broadcast(extra) {
+  if (!sbChannel) return;
+  sbChannel.send({ type: 'broadcast', event: 'timer-state', payload: { ...state, ...extra } });
+}
+
+// ─── モード・時間設定 ─────────────────────────────────────
+function setMode(m) {
+  if (state.running) return;
+  state.mode = m;
+  document.getElementById('mode-up').classList.toggle('active', m === 'up');
+  document.getElementById('mode-down').classList.toggle('active', m === 'down');
+  document.getElementById('cd-settings').classList.toggle('visible', m === 'down');
+  state.elapsed = 0; state.bellFired = [false,false,false];
+  updateDisplay(); broadcast();
+}
+
+function applyPreset(sec, btn) {
+  if (state.running) return;
+  state.startSec = sec; state.elapsed = 0; state.bellFired = [false,false,false];
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  updateDisplay(); broadcast();
+}
+
+function applyCustom() {
+  if (state.running) return;
+  const m = parseInt(document.getElementById('custom-min').value) || 0;
+  const s = parseInt(document.getElementById('custom-sec').value) || 0;
+  state.startSec = m * 60 + s; state.elapsed = 0; state.bellFired = [false,false,false];
+  updateDisplay(); broadcast();
+}
+
+// ─── タイマー制御 ─────────────────────────────────────────
+function toggleStart() {
+  if (!state.running) {
+    state.running = true;
+    const btn = document.getElementById('btn-start');
+    btn.classList.remove('start');
+    btn.style.cssText = 'flex:1;padding:12px;background:#ff5c5c;border:0.5px solid #ff5c5c;border-radius:10px;color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:500;';
+    document.getElementById('icon-start').innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    document.getElementById('label-start').textContent = '一時停止';
+    intervalId = setInterval(tick, 1000);
+  } else {
+    state.running = false;
+    const btn = document.getElementById('btn-start');
+    btn.style.cssText = '';
+    btn.classList.add('start');
+    document.getElementById('icon-start').innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    document.getElementById('label-start').textContent = 'スタート';
+    clearInterval(intervalId);
+  }
+  updateDisplay(); broadcast();
+}
+
+function tick() {
+  state.elapsed++;
+  if (state.mode === 'down') {
+    const remaining = state.startSec - state.elapsed;
+    const bellTimes = getBellTimes();
+    bellTimes.forEach((sec, i) => {
+      if (remaining === sec && !state.bellFired[i]) {
+        state.bellFired[i] = true;
+        ringBell(true);
+      }
+    });
+    if (remaining <= 0) stopTimer();
+  }
+  updateDisplay(); broadcast();
+}
+
+function stopTimer() {
+  state.running = false;
+  const btn = document.getElementById('btn-start');
+  btn.style.cssText = ''; btn.classList.add('start');
+  document.getElementById('icon-start').innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+  document.getElementById('label-start').textContent = 'スタート';
+  clearInterval(intervalId);
+}
+
+function resetTimer() {
+  stopTimer();
+  state.elapsed = 0; state.bellFired = [false,false,false];
+  updateDisplay(); broadcast();
+}
+
+// ─── 表示更新 ─────────────────────────────────────────────
+function formatTime(sec) {
+  const s = Math.max(0, sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return pad(h)+':'+pad(m)+':'+pad(ss);
+  return pad(m)+':'+pad(ss);
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function updateDisplay() {
+  const displaySec = state.mode === 'up' ? state.elapsed : Math.max(0, state.startSec - state.elapsed);
+  const el = document.getElementById('time-display');
+  el.textContent = formatTime(displaySec);
+  el.className = 'time-display';
+  if (state.mode === 'down') {
+    const r = state.startSec - state.elapsed;
+    if (r <= 0) el.classList.add('ended');
+    else if (r <= 60) el.classList.add('warning');
+  }
+  document.getElementById('mode-label').textContent = state.mode === 'up' ? 'カウントアップ' : 'カウントダウン';
+}
+
+// ─── ベル ─────────────────────────────────────────────────
+function ringBell(fromTick) {
+  ringBell3Times();
+  if (!fromTick) broadcast({ bell: true });
+  else broadcast({});
+  const now = new Date();
+  document.getElementById('bell-log').textContent =
+    '最終: '+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+}
+
+function manualBell() {
+  ringBell3Times();
+  broadcast({ bell: true });
+  const now = new Date();
+  document.getElementById('bell-log').textContent =
+    '最終: '+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+}
+
+function ringBell3Times() {
+  let count = 0;
+  function ring() {
+    if (count >= 3) return;
+    playBeep(); count++;
+    if (count < 3) setTimeout(ring, 700);
+  }
+  ring();
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+  } catch(e) {}
+}
+
+updateDisplay();
+
+window.connectSupabase = connectSupabase;
+window.setMode = setMode;
+window.applyPreset = applyPreset;
+window.applyCustom = applyCustom;
+window.toggleStart = toggleStart;
+window.resetTimer = resetTimer;
+window.manualBell = manualBell;
+</script>
+</body>
+</html>

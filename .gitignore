@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.code-workspace
+
+# Node / package managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+
+# XAMPP / PHP temporary files
+*.log
+*.cache
+
+# JetBrains
+.idea/
+
+# Misc
+*.tmp
+*.swp
+*.swo

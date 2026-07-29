@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイマー</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080808;
+    --text: #f5f5f5;
+    --muted: #555;
+    --accent: #e8ff47;
+    --warning: #ff9a3c;
+    --danger: #ff5c5c;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Supabase設定 — HTMLに直書きするためのガイド表示 */
+  .not-configured {
+    text-align: center;
+    padding: 2rem;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 2;
+  }
+  .not-configured code {
+    background: #1a1a1a;
+    border: 0.5px solid #333;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  /* Main display */
+  .main { display: flex; flex-direction: column; align-items: center; gap: 2rem; }
+  .mode-badge {
+    font-size: 12px; color: var(--muted);
+    letter-spacing: 0.15em; text-transform: uppercase;
+    font-weight: 300;
+  }
+  .time-display {
+    font-family: var(--mono);
+    font-weight: 300;
+    font-size: 100px;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    line-height: 1;
+    transition: color 0.5s;
+    white-space: nowrap;
+    display: block;
+  }
+  .time-display.warning { color: var(--warning); }
+  .time-display.ended { color: var(--danger); }
+  .status-bar { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); font-weight: 300; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: all 0.3s; }
+  .status-dot.running { background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .status-dot.ended { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+  @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+
+  /* Bell overlay */
+  .bell-overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  }
+  .bell-overlay.ring { opacity: 1; }
+  .bell-icon { font-size: clamp(60px, 12vw, 120px); animation: bellShake 0.6s ease-in-out; }
+  @keyframes bellShake {
+    0%,100%{ transform: rotate(0) scale(1); }
+    20%{ transform: rotate(-25deg) scale(1.1); }
+    50%{ transform: rotate(25deg) scale(1.15); }
+    80%{ transform: rotate(-12deg) scale(1.05); }
+  }
+
+  /* TIME UP label */
+  .ended-label {
+    position: fixed; top: 2rem;
+    font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--danger); opacity: 0; transition: opacity 0.5s;
+  }
+  .ended-label.visible { opacity: 1; }
+
+  /* Connection indicator */
+  .conn-indicator {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: #333;
+  }
+  .conn-dot { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: all 0.3s; }
+  .conn-dot.connected { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+  【設定方法】
+  下記の SUPABASE_URL と SUPABASE_ANON_KEY を
+  管理者画面と同じ値に書き換えてください。
+  ============================================================ -->
+<script>
+  var SUPABASE_URL  = 'https://mvxzwucskcmislwmuhja.supabase.co';   // 例: https://xxxxxxxx.supabase.co
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12eHp3dWNza2NtaXNsd211aGphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzMTk2OTYsImV4cCI6MjEwMDg5NTY5Nn0.WldNE8lR0ip3yQ5w0u3R5GYqw6mw0udi9MdEnbt-Lq4'; // Anon Keyをここに貼る
+</script>
+
+<div class="main" id="main">
+  <div class="mode-badge" id="mode-badge">接続中...</div>
+  <div class="time-display" id="time-display">--:--</div>
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">管理者の操作を待っています</span>
+  </div>
+</div>
+
+<div class="ended-label" id="ended-label">TIME UP</div>
+
+<div class="bell-overlay" id="bell-overlay">
+  <div class="bell-icon">🔔</div>
+</div>
+
+<div class="conn-indicator">
+  <div class="conn-dot" id="conn-dot"></div>
+  <span id="conn-label">接続中...</span>
+</div>
+
+<script>
+(function() {
+  if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+    document.getElementById('main').innerHTML =
+      '<div class="not-configured">' +
+      'user.html の先頭にある<br>' +
+      '<code>SUPABASE_URL</code> と <code>SUPABASE_ANON_KEY</code><br>' +
+      'を管理者画面と同じ値に書き換えてください。' +
+      '</div>';
+    return;
+  }
+
+  const { createClient } = window.supabase;
+  const sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const channel = sbClient.channel('timer-room');
+  channel
+    .on('broadcast', { event: 'timer-state' }, ({ payload }) => {
+      applyState(payload);
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        document.getElementById('conn-dot').classList.add('connected');
+        document.getElementById('conn-label').textContent = '接続済み';
+        document.getElementById('mode-badge').textContent = '待機中';
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        document.getElementById('conn-label').textContent = '接続失敗';
+      }
+    });
+
+  function applyState(s) {
+    if (s.bell) ringBell3Times();
+
+    const displaySec = s.mode === 'up' ? s.elapsed : Math.max(0, s.startSec - s.elapsed);
+    const el = document.getElementById('time-display');
+    el.textContent = formatTime(displaySec);
+    el.className = 'time-display';
+
+    const endedLabel = document.getElementById('ended-label');
+    endedLabel.classList.remove('visible');
+
+    if (s.mode === 'down') {
+      const r = s.startSec - s.elapsed;
+      if (r <= 0) { el.classList.add('ended'); endedLabel.classList.add('visible'); }
+      else if (r <= 60) el.classList.add('warning');
+    }
+
+    document.getElementById('mode-badge').textContent =
+      s.mode === 'up' ? 'カウントアップ' : 'カウントダウン';
+
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    dot.className = 'status-dot';
+    if (!s.running && s.elapsed === 0) {
+      txt.textContent = '待機中';
+    } else if (s.running) {
+      dot.classList.add('running'); txt.textContent = '進行中';
+    } else if (s.mode === 'down' && (s.startSec - s.elapsed) <= 0) {
+      dot.classList.add('ended'); txt.textContent = '終了';
+    } else {
+      txt.textContent = '一時停止中';
+    }
+  }
+
+  function formatTime(sec) {
+    const s = Math.max(0, sec);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    if (h > 0) return pad(h)+':'+pad(m)+':'+pad(ss);
+    return pad(m)+':'+pad(ss);
+  }
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function ringBell3Times() {
+    const overlay = document.getElementById('bell-overlay');
+    let count = 0;
+    function ring() {
+      if (count >= 3) { setTimeout(() => overlay.classList.remove('ring'), 600); return; }
+      overlay.classList.remove('ring');
+      void overlay.offsetWidth;
+      overlay.classList.add('ring');
+      playBeep(); count++;
+      setTimeout(ring, 700);
+    }
+    ring();
+  }
+
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+    } catch(e) {}
+  }
+})();
+</script>
+
+<script>
+// 幅いっぱい・かつ縦に収まる最大サイズに自動調整
+function fitTimeDisplay() {
+  const el = document.getElementById('time-display');
+  if (!el) return;
+
+  // 周囲のUI（mode-badge, status-bar）の高さを除いた利用可能縦幅
+  const vpad = 80; // 上下の余白 + mode-badge + status-bar の概算
+  const maxH = window.innerHeight - vpad;
+  const maxW = window.innerWidth - 32; // 左右16pxずつ余白
+
+  // 基準フォントサイズから実際の描画幅を測定して比例計算
+  const base = 100;
+  el.style.fontSize = base + 'px';
+  const ratio = el.scrollWidth / base;      // 1pxあたりの横幅
+  const lineH = el.offsetHeight / base;     // 1pxあたりの縦幅
+
+  const sizeByW = maxW / ratio;
+  const sizeByH = maxH / lineH;
+  const finalSize = Math.floor(Math.min(sizeByW, sizeByH));
+
+  el.style.fontSize = finalSize + 'px';
+}
+
+window.addEventListener('resize', fitTimeDisplay);
+window.addEventListener('DOMContentLoaded', fitTimeDisplay);
+// タイマー文字列が変わると幅が変わる可能性があるので監視
+const _timerEl = document.getElementById('time-display');
+if (_timerEl && window.MutationObserver) {
+  new MutationObserver(fitTimeDisplay).observe(_timerEl, { childList: true, characterData: true, subtree: true });
+}
+</script>
+</body>
+</html>
