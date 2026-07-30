@@ -240,12 +240,55 @@ function updateBellDesc() {
     else desc.textContent = '残り'+(val/60)+'分';
   });
 }
+const ADMIN_CREDENTIALS_KEY = 'supabase-admin-credentials';
+const ADMIN_CREDENTIALS_EXPIRY_MS = 60 * 60 * 1000; // 60分
+
 document.addEventListener('DOMContentLoaded', () => {
   ['bell1','bell2','bell3'].forEach(id => {
     document.getElementById(id).addEventListener('input', updateBellDesc);
   });
   updateBellDesc();
+  autoConnectIfSaved();
 });
+
+function saveAdminCredentials(url, key) {
+  if (!window.localStorage) return;
+  const payload = { url, key, savedAt: Date.now() };
+  window.localStorage.setItem(ADMIN_CREDENTIALS_KEY, JSON.stringify(payload));
+}
+
+function loadAdminCredentials() {
+  if (!window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(ADMIN_CREDENTIALS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.url !== 'string' || typeof parsed.key !== 'string' || typeof parsed.savedAt !== 'number') return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearAdminCredentials() {
+  if (!window.localStorage) return;
+  window.localStorage.removeItem(ADMIN_CREDENTIALS_KEY);
+}
+
+function isAdminCredentialsFresh(creds) {
+  return creds && (Date.now() - creds.savedAt) < ADMIN_CREDENTIALS_EXPIRY_MS;
+}
+
+function autoConnectIfSaved() {
+  const creds = loadAdminCredentials();
+  if (!creds || !isAdminCredentialsFresh(creds)) {
+    clearAdminCredentials();
+    return;
+  }
+  document.getElementById('sb-url').value = creds.url;
+  document.getElementById('sb-key').value = creds.key;
+  connectSupabase();
+}
 
 // ─── Supabase接続 ────────────────────────────────────────
 function connectSupabase() {
@@ -257,14 +300,14 @@ function connectSupabase() {
   try {
     const { createClient } = window.supabase;
     sbClient = createClient(url, key);
-    subscribeChannel();
+    subscribeChannel(url, key);
   } catch(e) {
     alert('接続エラー: ' + e.message);
     btn.textContent = '接続する'; btn.disabled = false;
   }
 }
 
-function subscribeChannel() {
+function subscribeChannel(url, key) {
   sbChannel = sbClient.channel('timer-room', {
     config: { broadcast: { self: false } }
   });
@@ -274,8 +317,30 @@ function subscribeChannel() {
       document.getElementById('conn-label').textContent = '接続済み';
       document.getElementById('setup-card').style.display = 'none';
       document.getElementById('main-ui').classList.add('visible');
+      saveAdminCredentials(url, key);
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      clearAdminCredentials();
+      const btn = document.getElementById('connect-btn');
+      btn.textContent = '接続する'; btn.disabled = false;
+      alert('接続失敗: ' + status);
     }
   });
+}
+
+function disconnectSupabase() {
+  if (sbChannel) {
+    sbChannel.unsubscribe();
+    sbChannel = null;
+  }
+  if (sbClient && sbClient.removeAllChannels) {
+    sbClient.removeAllChannels();
+  }
+  sbClient = null;
+  clearAdminCredentials();
+  document.getElementById('conn-dot').classList.remove('connected');
+  document.getElementById('conn-label').textContent = '未接続';
+  document.getElementById('setup-card').style.display = 'block';
+  document.getElementById('main-ui').classList.remove('visible');
 }
 
 function broadcast(extra) {
