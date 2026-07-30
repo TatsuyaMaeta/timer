@@ -589,6 +589,22 @@
                         <span class="unit">秒</span>
                         <span class="bell-desc" id="bell3-desc">終了時</span>
                     </div>
+                    <div class="bell-timing-row">
+                        <div class="bell-number">OT</div>
+                        <span class="bell-label">超過アラーム</span>
+                        <span style="font-size: 12px; color: var(--muted)">間隔</span>
+                        <input
+                            type="number"
+                            id="overtime-interval"
+                            min="1"
+                            max="300"
+                            value="10"
+                        />
+                        <span class="unit">秒</span>
+                        <span class="bell-desc" id="overtime-desc">
+                            終了後10秒ごとに3回
+                        </span>
+                    </div>
                 </div>
 
                 <div class="bell-divider"></div>
@@ -624,6 +640,7 @@
                 elapsed: 0,
                 startSec: 300,
                 bellFired: [false, false, false],
+                overtimeFired: [false, false, false],
             };
 
             // ─── ベル設定を取得 ──────────────────────────────────────
@@ -633,6 +650,13 @@
                     parseInt(document.getElementById("bell2").value) || 0,
                     parseInt(document.getElementById("bell3").value) || 0,
                 ];
+            }
+
+            function getOvertimeInterval() {
+                return (
+                    parseInt(document.getElementById("overtime-interval").value) ||
+                    0
+                );
             }
 
             // ベル説明テキスト更新
@@ -646,16 +670,26 @@
                     else if (val < 60) desc.textContent = "残り" + val + "秒";
                     else desc.textContent = "残り" + val / 60 + "分";
                 });
+                const overtimeVal = getOvertimeInterval();
+                const overtimeDesc = document.getElementById("overtime-desc");
+                if (overtimeVal <= 0) {
+                    overtimeDesc.textContent = "オフ";
+                } else {
+                    overtimeDesc.textContent =
+                        "終了後" + overtimeVal + "秒ごとに3回";
+                }
             }
             const ADMIN_CREDENTIALS_KEY = "supabase-admin-credentials";
             const ADMIN_CREDENTIALS_EXPIRY_MS = 60 * 60 * 1000; // 60分
 
             document.addEventListener("DOMContentLoaded", () => {
-                ["bell1", "bell2", "bell3"].forEach((id) => {
-                    document
-                        .getElementById(id)
-                        .addEventListener("input", updateBellDesc);
-                });
+                ["bell1", "bell2", "bell3", "overtime-interval"].forEach(
+                    (id) => {
+                        document
+                            .getElementById(id)
+                            .addEventListener("input", updateBellDesc);
+                    },
+                );
                 updateBellDesc();
                 autoConnectIfSaved();
             });
@@ -807,6 +841,7 @@
                     .classList.toggle("visible", m === "down");
                 state.elapsed = 0;
                 state.bellFired = [false, false, false];
+                state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
             }
@@ -816,6 +851,7 @@
                 state.startSec = sec;
                 state.elapsed = 0;
                 state.bellFired = [false, false, false];
+                state.overtimeFired = [false, false, false];
                 document
                     .querySelectorAll(".preset-btn")
                     .forEach((b) => b.classList.remove("selected"));
@@ -833,6 +869,7 @@
                 state.startSec = m * 60 + s;
                 state.elapsed = 0;
                 state.bellFired = [false, false, false];
+                state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
             }
@@ -876,7 +913,19 @@
                             ringBell(true);
                         }
                     });
-                    if (remaining <= 0) stopTimer();
+                    const overtimeInterval = getOvertimeInterval();
+                    if (remaining <= 0 && overtimeInterval > 0) {
+                        const overtime = state.elapsed - state.startSec;
+                        [1, 2, 3].forEach((i) => {
+                            if (
+                                overtime === overtimeInterval * i &&
+                                !state.overtimeFired[i - 1]
+                            ) {
+                                state.overtimeFired[i - 1] = true;
+                                ringBell(true);
+                            }
+                        });
+                    }
                 }
                 updateDisplay();
                 broadcast();
@@ -897,6 +946,7 @@
                 stopTimer();
                 state.elapsed = 0;
                 state.bellFired = [false, false, false];
+                state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
             }
