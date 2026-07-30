@@ -552,7 +552,7 @@
                             id="bell1"
                             min="0"
                             max="9999"
-                            value="60"
+                            value="30"
                         />
                         <span class="unit">秒</span>
                         <span class="bell-desc" id="bell1-desc">残り1分</span>
@@ -568,35 +568,21 @@
                             id="bell2"
                             min="0"
                             max="9999"
-                            value="30"
-                        />
-                        <span class="unit">秒</span>
-                        <span class="bell-desc" id="bell2-desc">残り30秒</span>
-                    </div>
-                    <div class="bell-timing-row">
-                        <div class="bell-number">3</div>
-                        <span class="bell-label">3回目</span>
-                        <span style="font-size: 12px; color: var(--muted)"
-                            >残り</span
-                        >
-                        <input
-                            type="number"
-                            id="bell3"
-                            min="0"
-                            max="9999"
                             value="0"
                         />
                         <span class="unit">秒</span>
-                        <span class="bell-desc" id="bell3-desc">終了時</span>
+                        <span class="bell-desc" id="bell2-desc">終了時</span>
                     </div>
                     <div class="bell-timing-row">
                         <div class="bell-number">OT</div>
                         <span class="bell-label">超過アラーム</span>
-                        <span style="font-size: 12px; color: var(--muted)">間隔</span>
+                        <span style="font-size: 12px; color: var(--muted)"
+                            >間隔</span
+                        >
                         <input
                             type="number"
                             id="overtime-interval"
-                            min="1"
+                            min="0"
                             max="300"
                             value="10"
                         />
@@ -639,7 +625,7 @@
                 running: false,
                 elapsed: 0,
                 startSec: 300,
-                bellFired: [false, false, false],
+                bellFired: [false, false],
                 overtimeFired: [false, false, false],
             };
 
@@ -648,20 +634,20 @@
                 return [
                     parseInt(document.getElementById("bell1").value) || 0,
                     parseInt(document.getElementById("bell2").value) || 0,
-                    parseInt(document.getElementById("bell3").value) || 0,
                 ];
             }
 
             function getOvertimeInterval() {
                 return (
-                    parseInt(document.getElementById("overtime-interval").value) ||
-                    0
+                    parseInt(
+                        document.getElementById("overtime-interval").value,
+                    ) || 0
                 );
             }
 
             // ベル説明テキスト更新
             function updateBellDesc() {
-                [1, 2, 3].forEach((i) => {
+                [1, 2].forEach((i) => {
                     const val =
                         parseInt(document.getElementById("bell" + i).value) ||
                         0;
@@ -683,13 +669,11 @@
             const ADMIN_CREDENTIALS_EXPIRY_MS = 60 * 60 * 1000; // 60分
 
             document.addEventListener("DOMContentLoaded", () => {
-                ["bell1", "bell2", "bell3", "overtime-interval"].forEach(
-                    (id) => {
-                        document
-                            .getElementById(id)
-                            .addEventListener("input", updateBellDesc);
-                    },
-                );
+                ["bell1", "bell2", "overtime-interval"].forEach((id) => {
+                    document
+                        .getElementById(id)
+                        .addEventListener("input", updateBellDesc);
+                });
                 updateBellDesc();
                 autoConnectIfSaved();
             });
@@ -840,7 +824,7 @@
                     .getElementById("cd-settings")
                     .classList.toggle("visible", m === "down");
                 state.elapsed = 0;
-                state.bellFired = [false, false, false];
+                state.bellFired = [false, false];
                 state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
@@ -850,7 +834,7 @@
                 if (state.running) return;
                 state.startSec = sec;
                 state.elapsed = 0;
-                state.bellFired = [false, false, false];
+                state.bellFired = [false, false];
                 state.overtimeFired = [false, false, false];
                 document
                     .querySelectorAll(".preset-btn")
@@ -868,7 +852,7 @@
                     parseInt(document.getElementById("custom-sec").value) || 0;
                 state.startSec = m * 60 + s;
                 state.elapsed = 0;
-                state.bellFired = [false, false, false];
+                state.bellFired = [false, false];
                 state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
@@ -945,7 +929,7 @@
             function resetTimer() {
                 stopTimer();
                 state.elapsed = 0;
-                state.bellFired = [false, false, false];
+                state.bellFired = [false, false];
                 state.overtimeFired = [false, false, false];
                 updateDisplay();
                 broadcast();
