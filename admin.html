@@ -577,18 +577,18 @@
                         <div class="bell-number">OT</div>
                         <span class="bell-label">超過アラーム</span>
                         <span style="font-size: 12px; color: var(--muted)"
-                            >間隔</span
+                            >超過</span
                         >
                         <input
                             type="number"
-                            id="overtime-interval"
+                            id="overtime-sec"
                             min="0"
                             max="300"
                             value="10"
                         />
                         <span class="unit">秒</span>
                         <span class="bell-desc" id="overtime-desc">
-                            終了後10秒ごとに3回
+                            終了後10秒でベル3回
                         </span>
                     </div>
                 </div>
@@ -626,7 +626,7 @@
                 elapsed: 0,
                 startSec: 300,
                 bellFired: [false, false],
-                overtimeFired: [false, false, false],
+                overtimeFired: false,
             };
 
             // ─── ベル設定を取得 ──────────────────────────────────────
@@ -637,11 +637,9 @@
                 ];
             }
 
-            function getOvertimeInterval() {
+            function getOvertimeSec() {
                 return (
-                    parseInt(
-                        document.getElementById("overtime-interval").value,
-                    ) || 0
+                    parseInt(document.getElementById("overtime-sec").value) || 0
                 );
             }
 
@@ -656,20 +654,20 @@
                     else if (val < 60) desc.textContent = "残り" + val + "秒";
                     else desc.textContent = "残り" + val / 60 + "分";
                 });
-                const overtimeVal = getOvertimeInterval();
+                const overtimeVal = getOvertimeSec();
                 const overtimeDesc = document.getElementById("overtime-desc");
                 if (overtimeVal <= 0) {
                     overtimeDesc.textContent = "オフ";
                 } else {
                     overtimeDesc.textContent =
-                        "終了後" + overtimeVal + "秒ごとに3回";
+                        "終了後" + overtimeVal + "秒でベル3回";
                 }
             }
             const ADMIN_CREDENTIALS_KEY = "supabase-admin-credentials";
             const ADMIN_CREDENTIALS_EXPIRY_MS = 60 * 60 * 1000; // 60分
 
             document.addEventListener("DOMContentLoaded", () => {
-                ["bell1", "bell2", "overtime-interval"].forEach((id) => {
+                ["bell1", "bell2", "overtime-sec"].forEach((id) => {
                     document
                         .getElementById(id)
                         .addEventListener("input", updateBellDesc);
@@ -825,7 +823,7 @@
                     .classList.toggle("visible", m === "down");
                 state.elapsed = 0;
                 state.bellFired = [false, false];
-                state.overtimeFired = [false, false, false];
+                state.overtimeFired = false;
                 updateDisplay();
                 broadcast();
             }
@@ -835,7 +833,7 @@
                 state.startSec = sec;
                 state.elapsed = 0;
                 state.bellFired = [false, false];
-                state.overtimeFired = [false, false, false];
+                state.overtimeFired = false;
                 document
                     .querySelectorAll(".preset-btn")
                     .forEach((b) => b.classList.remove("selected"));
@@ -853,7 +851,7 @@
                 state.startSec = m * 60 + s;
                 state.elapsed = 0;
                 state.bellFired = [false, false];
-                state.overtimeFired = [false, false, false];
+                state.overtimeFired = false;
                 updateDisplay();
                 broadcast();
             }
@@ -897,18 +895,14 @@
                             ringBell(true);
                         }
                     });
-                    const overtimeInterval = getOvertimeInterval();
-                    if (remaining <= 0 && overtimeInterval > 0) {
+                    // 超過アラーム: 指定秒数を超過した時点で1回だけ（ベルは3回鳴る）
+                    const overtimeSec = getOvertimeSec();
+                    if (overtimeSec > 0 && !state.overtimeFired) {
                         const overtime = state.elapsed - state.startSec;
-                        [1, 2, 3].forEach((i) => {
-                            if (
-                                overtime === overtimeInterval * i &&
-                                !state.overtimeFired[i - 1]
-                            ) {
-                                state.overtimeFired[i - 1] = true;
-                                ringBell(true);
-                            }
-                        });
+                        if (overtime === overtimeSec) {
+                            state.overtimeFired = true;
+                            ringBell(true);
+                        }
                     }
                 }
                 updateDisplay();
@@ -930,7 +924,7 @@
                 stopTimer();
                 state.elapsed = 0;
                 state.bellFired = [false, false];
-                state.overtimeFired = [false, false, false];
+                state.overtimeFired = false;
                 updateDisplay();
                 broadcast();
             }
@@ -949,15 +943,15 @@
             }
 
             function updateDisplay() {
-                const displaySec =
-                    state.mode === "up"
-                        ? state.elapsed
-                        : Math.max(0, state.startSec - state.elapsed);
                 const el = document.getElementById("time-display");
-                el.textContent = formatTime(displaySec);
                 el.className = "time-display";
-                if (state.mode === "down") {
+                if (state.mode === "up") {
+                    el.textContent = formatTime(state.elapsed);
+                } else {
+                    // 0秒以降は超過時間を +MM:SS でカウントアップ表示
                     const r = state.startSec - state.elapsed;
+                    el.textContent =
+                        r < 0 ? "+" + formatTime(-r) : formatTime(r);
                     if (r <= 0) el.classList.add("ended");
                     else if (r <= 60) el.classList.add("warning");
                 }

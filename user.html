@@ -175,16 +175,18 @@
   function applyState(s) {
     if (s.bell) ringBell3Times();
 
-    const displaySec = s.mode === 'up' ? s.elapsed : Math.max(0, s.startSec - s.elapsed);
     const el = document.getElementById('time-display');
-    el.textContent = formatTime(displaySec);
     el.className = 'time-display';
 
     const endedLabel = document.getElementById('ended-label');
     endedLabel.classList.remove('visible');
 
-    if (s.mode === 'down') {
+    if (s.mode === 'up') {
+      el.textContent = formatTime(s.elapsed);
+    } else {
+      // 0秒以降は超過時間を +MM:SS でカウントアップ表示
       const r = s.startSec - s.elapsed;
+      el.textContent = r < 0 ? '+' + formatTime(-r) : formatTime(r);
       if (r <= 0) { el.classList.add('ended'); endedLabel.classList.add('visible'); }
       else if (r <= 60) el.classList.add('warning');
     }
