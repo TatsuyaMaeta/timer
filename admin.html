@@ -349,6 +349,36 @@
                 color: #555;
                 margin-left: auto;
             }
+            .bell-timing-row select {
+                background: var(--surface2);
+                border: 0.5px solid var(--border);
+                border-radius: 8px;
+                padding: 7px 10px;
+                color: var(--text);
+                font-family: var(--sans);
+                font-size: 13px;
+                outline: none;
+                cursor: pointer;
+                transition: border-color 0.2s;
+            }
+            .bell-timing-row select:focus {
+                border-color: var(--accent);
+            }
+            .preview-btn {
+                padding: 6px 12px;
+                background: transparent;
+                border: 0.5px solid var(--border2);
+                border-radius: 8px;
+                color: var(--muted);
+                font-family: var(--sans);
+                font-size: 12px;
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .preview-btn:hover {
+                border-color: var(--accent);
+                color: var(--accent);
+            }
             .bell-divider {
                 height: 0.5px;
                 background: var(--border);
@@ -591,6 +621,20 @@
                             終了後10秒でベル3回
                         </span>
                     </div>
+                    <div class="bell-timing-row">
+                        <div class="bell-number">♪</div>
+                        <span class="bell-label">音の種類</span>
+                        <select id="sound-type">
+                            <option value="buzzer">ブザー（最強）</option>
+                            <option value="siren">サイレン</option>
+                            <option value="beep">ビープ（強）</option>
+                            <option value="soft">ソフト（従来）</option>
+                        </select>
+                        <button class="preview-btn" onclick="previewSound()">
+                            試聴
+                        </button>
+                        <span class="bell-desc">ユーザー画面にも反映</span>
+                    </div>
                 </div>
 
                 <div class="bell-divider"></div>
@@ -627,6 +671,7 @@
                 startSec: 300,
                 bellFired: [false, false],
                 overtimeFired: false,
+                soundType: "buzzer",
             };
 
             // ─── ベル設定を取得 ──────────────────────────────────────
@@ -671,6 +716,12 @@
                     document
                         .getElementById(id)
                         .addEventListener("input", updateBellDesc);
+                });
+                const soundSelect = document.getElementById("sound-type");
+                soundSelect.value = state.soundType;
+                soundSelect.addEventListener("change", () => {
+                    state.soundType = soundSelect.value;
+                    broadcast();
                 });
                 updateBellDesc();
                 autoConnectIfSaved();
@@ -991,31 +1042,121 @@
                 let count = 0;
                 function ring() {
                     if (count >= 3) return;
-                    playBeep();
+                    playBeep(state.soundType);
                     count++;
                     if (count < 3) setTimeout(ring, 700);
                 }
                 ring();
             }
 
-            function playBeep() {
+            // 選択中の音を1回だけローカル再生（ユーザー画面には送らない）
+            function previewSound() {
+                playBeep(document.getElementById("sound-type").value);
+            }
+
+            // AudioContext はブラウザ側の同時生成数に上限があるため1つを再利用する
+            let audioCtx = null;
+            function getAudioCtx() {
+                if (!audioCtx) {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AC();
+                }
+                if (audioCtx.state === "suspended") audioCtx.resume();
+                return audioCtx;
+            }
+
+            function playBeep(type) {
                 try {
-                    const ctx = new (
-                        window.AudioContext || window.webkitAudioContext
-                    )();
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.frequency.value = 880;
-                    osc.type = "sine";
-                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(
-                        0.001,
-                        ctx.currentTime + 0.5,
-                    );
-                    osc.start(ctx.currentTime);
-                    osc.stop(ctx.currentTime + 0.5);
+                    const ctx = getAudioCtx();
+                    const t0 = ctx.currentTime;
+                    const master = ctx.createGain();
+                    master.connect(ctx.destination);
+
+                    if (type === "beep") {
+                        // 矩形波の高音を2連打。芯があって遠くまで通る
+                        const dur = 0.12;
+                        [0, 0.16].forEach((offset) => {
+                            const t = t0 + offset;
+                            const o = ctx.createOscillator();
+                            const g = ctx.createGain();
+                            o.type = "square";
+                            o.frequency.value = 1046;
+                            g.gain.setValueAtTime(0.0001, t);
+                            g.gain.linearRampToValueAtTime(0.7, t + 0.005);
+                            g.gain.setValueAtTime(0.7, t + dur - 0.02);
+                            g.gain.exponentialRampToValueAtTime(
+                                0.0001,
+                                t + dur,
+                            );
+                            o.connect(g);
+                            g.connect(master);
+                            o.start(t);
+                            o.stop(t + dur);
+                        });
+                    } else if (type === "siren") {
+                        // 1200→600→1200Hz のスイープ。警告色の強い音
+                        const dur = 0.6;
+                        const o = ctx.createOscillator();
+                        o.type = "square";
+                        o.frequency.setValueAtTime(1200, t0);
+                        o.frequency.linearRampToValueAtTime(600, t0 + dur / 2);
+                        o.frequency.linearRampToValueAtTime(1200, t0 + dur);
+                        const lp = ctx.createBiquadFilter();
+                        lp.type = "lowpass";
+                        lp.frequency.value = 3500;
+                        master.gain.setValueAtTime(0.5, t0);
+                        master.gain.setValueAtTime(0.5, t0 + dur - 0.06);
+                        master.gain.exponentialRampToValueAtTime(
+                            0.0001,
+                            t0 + dur,
+                        );
+                        o.connect(lp);
+                        lp.connect(master);
+                        o.start(t0);
+                        o.stop(t0 + dur);
+                    } else if (type === "soft") {
+                        // 従来のサイン波
+                        const o = ctx.createOscillator();
+                        const g = ctx.createGain();
+                        o.type = "sine";
+                        o.frequency.value = 880;
+                        g.gain.setValueAtTime(0.5, t0);
+                        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+                        o.connect(g);
+                        g.connect(master);
+                        o.start(t0);
+                        o.stop(t0 + 0.5);
+                    } else {
+                        // buzzer（既定）: 低い鋸波2本 + トレモロで「ビービー」
+                        const dur = 0.55;
+                        const lp = ctx.createBiquadFilter();
+                        lp.type = "lowpass";
+                        lp.frequency.value = 3000;
+                        lp.connect(master);
+                        master.gain.setValueAtTime(0.55, t0);
+                        master.gain.setValueAtTime(0.55, t0 + dur - 0.06);
+                        master.gain.exponentialRampToValueAtTime(
+                            0.0001,
+                            t0 + dur,
+                        );
+                        const trem = ctx.createOscillator();
+                        const tremGain = ctx.createGain();
+                        trem.type = "square";
+                        trem.frequency.value = 15;
+                        tremGain.gain.value = 0.3;
+                        trem.connect(tremGain);
+                        tremGain.connect(master.gain);
+                        trem.start(t0);
+                        trem.stop(t0 + dur);
+                        [233, 349].forEach((f) => {
+                            const o = ctx.createOscillator();
+                            o.type = "sawtooth";
+                            o.frequency.value = f;
+                            o.connect(lp);
+                            o.start(t0);
+                            o.stop(t0 + dur);
+                        });
+                    }
                 } catch (e) {}
             }
 
@@ -1028,6 +1169,7 @@
             window.toggleStart = toggleStart;
             window.resetTimer = resetTimer;
             window.manualBell = manualBell;
+            window.previewSound = previewSound;
         </script>
     </body>
 </html>
